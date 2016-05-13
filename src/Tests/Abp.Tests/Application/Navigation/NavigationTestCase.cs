@@ -1,9 +1,11 @@
 using System.Threading.Tasks;
+using Abp.Application.Features;
 using Abp.Application.Navigation;
 using Abp.Authorization;
 using Abp.Configuration.Startup;
 using Abp.Dependency;
 using Abp.Localization;
+using Castle.MicroKernel.Registration;
 using NSubstitute;
 
 namespace Abp.Tests.Application.Navigation
@@ -42,18 +44,24 @@ namespace Abp.Tests.Application.Navigation
             NavigationManager = new NavigationManager(_iocManager, configuration);
             NavigationManager.Initialize();
 
+            _iocManager.IocContainer.Register(
+                Component.For<IFeatureDependencyContext, FeatureDependencyContext>()
+                    .UsingFactoryMethod(
+                        () => new FeatureDependencyContext(_iocManager, Substitute.For<IFeatureChecker>()))
+                );
+
             //Create user navigation manager to test
-            UserNavigationManager = new UserNavigationManager(NavigationManager)
-                                    {
-                                        PermissionChecker = CreateMockPermissionChecker()
-                                    };
+            UserNavigationManager = new UserNavigationManager(NavigationManager, Substitute.For<ILocalizationContext>(), _iocManager)
+            {
+                PermissionChecker = CreateMockPermissionChecker()
+            };
         }
 
         private static IPermissionChecker CreateMockPermissionChecker()
         {
             var permissionChecker = Substitute.For<IPermissionChecker>();
-            permissionChecker.IsGrantedAsync(1, "Abp.Zero.UserManagement").Returns(Task.FromResult(true));
-            permissionChecker.IsGrantedAsync(1, "Abp.Zero.RoleManagement").Returns(Task.FromResult(false));
+            permissionChecker.IsGrantedAsync(new UserIdentifier(1, 1), "Abp.Zero.UserManagement").Returns(Task.FromResult(true));
+            permissionChecker.IsGrantedAsync(new UserIdentifier(1, 1), "Abp.Zero.RoleManagement").Returns(Task.FromResult(false));
             return permissionChecker;
         }
 
@@ -73,7 +81,8 @@ namespace Abp.Tests.Application.Navigation
                                 new FixedLocalizableString("User management"),
                                 "fa fa-users",
                                 "#/admin/users",
-                                requiredPermissionName: "Abp.Zero.UserManagement"
+                                requiredPermissionName: "Abp.Zero.UserManagement",
+                                customData: "A simple test data"
                                 )
                         ).AddItem(
                             new MenuItemDefinition(
@@ -98,10 +107,18 @@ namespace Abp.Tests.Application.Navigation
                         "Abp.Zero.Administration.Setting",
                         new FixedLocalizableString("Setting management"),
                         icon: "fa fa-cog",
-                        url: "#/admin/settings"
+                        url: "#/admin/settings",
+                        customData: new MyCustomDataClass { Data1 = 42, Data2 = "FortyTwo" }
                         )
                     );
             }
+        }
+
+        public class MyCustomDataClass
+        {
+            public int Data1 { get; set; }
+
+            public string Data2 { get; set; }
         }
     }
 }

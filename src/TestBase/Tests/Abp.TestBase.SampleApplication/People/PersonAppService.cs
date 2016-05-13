@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Abp.Application.Services;
 using Abp.Application.Services.Dto;
+using Abp.Auditing;
 using Abp.Authorization;
 using Abp.AutoMapper;
 using Abp.Domain.Repositories;
@@ -20,6 +21,7 @@ namespace Abp.TestBase.SampleApplication.People
             _personRepository = personRepository;
         }
 
+        [DisableAuditing]
         public ListResultOutput<PersonDto> GetPeople(GetPeopleInput input)
         {
             var query = _personRepository.GetAll();
@@ -43,6 +45,11 @@ namespace Abp.TestBase.SampleApplication.People
         public async Task DeletePerson(EntityRequestInput input)
         {
             await _personRepository.DeleteAsync(input.Id);
+        }
+
+        public string TestPrimitiveMethod(int a, string b, EntityRequestInput c)
+        {
+            return a + "#" + b + "#" + c.Id;
         }
     }
 }

@@ -1,11 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Core.Objects;
+using System.Data.Entity.Infrastructure;
 using System.Threading.Tasks;
 using System.Transactions;
 using Abp.Dependency;
 using Abp.Domain.Uow;
+using Abp.EntityFramework.Utils;
+using Abp.MultiTenancy;
+using Abp.Reflection;
 using Castle.Core.Internal;
+using EntityFramework.DynamicFilters;
 
 namespace Abp.EntityFramework.Uow
 {
@@ -14,17 +20,26 @@ namespace Abp.EntityFramework.Uow
     /// </summary>
     public class EfUnitOfWork : UnitOfWorkBase, ITransientDependency
     {
-        private readonly IDictionary<Type, DbContext> _activeDbContexts;
-        private readonly IIocResolver _iocResolver;
-        private TransactionScope _transaction;
+        protected IDictionary<string, DbContext> ActiveDbContexts { get; private set; }
+
+        protected IIocResolver IocResolver { get; private set; }
+
+        protected TransactionScope CurrentTransaction;
+        private readonly IDbContextResolver _dbContextResolver;
 
         /// <summary>
         /// Creates a new <see cref="EfUnitOfWork"/>.
         /// </summary>
-        public EfUnitOfWork(IIocResolver iocResolver)
+        public EfUnitOfWork(
+            IIocResolver iocResolver, 
+            IConnectionStringResolver connectionStringResolver, 
+            IDbContextResolver dbContextResolver, 
+            IUnitOfWorkDefaultOptions defaultOptions)
+            : base(connectionStringResolver, defaultOptions)
         {
-            _iocResolver = iocResolver;
-            _activeDbContexts = new Dictionary<Type, DbContext>();
+            IocResolver = iocResolver;
+            _dbContextResolver = dbContextResolver;
+            ActiveDbContexts = new Dictionary<string, DbContext>();
         }
 
         protected override void BeginUow()
@@ -41,8 +56,8 @@ namespace Abp.EntityFramework.Uow
                     transactionOptions.Timeout = Options.Timeout.Value;
                 }
 
-                _transaction = new TransactionScope(
-                    TransactionScopeOption.Required,
+                CurrentTransaction = new TransactionScope(
+                    Options.Scope.GetValueOrDefault(TransactionScopeOption.Required),
                     transactionOptions,
                     Options.AsyncFlowOption.GetValueOrDefault(TransactionScopeAsyncFlowOption.Enabled)
                     );
@@ -51,12 +66,12 @@ namespace Abp.EntityFramework.Uow
 
         public override void SaveChanges()
         {
-            _activeDbContexts.Values.ForEach(SaveChangesInDbContext);
+            ActiveDbContexts.Values.ForEach(SaveChangesInDbContext);
         }
 
         public override async Task SaveChangesAsync()
         {
-            foreach (var dbContext in _activeDbContexts.Values)
+            foreach (var dbContext in ActiveDbContexts.Values)
             {
                 await SaveChangesInDbContextAsync(dbContext);
             }
@@ -65,28 +80,97 @@ namespace Abp.EntityFramework.Uow
         protected override void CompleteUow()
         {
             SaveChanges();
-            if (_transaction != null)
+            if (CurrentTransaction != null)
             {
-                _transaction.Complete();
+                CurrentTransaction.Complete();
             }
+
+            DisposeUow();
         }
 
         protected override async Task CompleteUowAsync()
         {
             await SaveChangesAsync();
-            if (_transaction != null)
+            if (CurrentTransaction != null)
             {
-                _transaction.Complete();
+                CurrentTransaction.Complete();
+            }
+
+            DisposeUow();
+        }
+
+        protected override void ApplyDisableFilter(string filterName)
+        {
+            foreach (var activeDbContext in ActiveDbContexts.Values)
+            {
+                activeDbContext.DisableFilter(filterName);
             }
         }
 
-        internal TDbContext GetOrCreateDbContext<TDbContext>()
+        protected override void ApplyEnableFilter(string filterName)
+        {
+            foreach (var activeDbContext in ActiveDbContexts.Values)
+            {
+                activeDbContext.EnableFilter(filterName);
+            }
+        }
+
+        protected override void ApplyFilterParameterValue(string filterName, string parameterName, object value)
+        {
+            foreach (var activeDbContext in ActiveDbContexts.Values)
+            {
+                if (TypeHelper.IsFunc<object>(value))
+                {
+                    activeDbContext.SetFilterScopedParameterValue(filterName, parameterName, (Func<object>)value);
+                }
+                else
+                {
+                    activeDbContext.SetFilterScopedParameterValue(filterName, parameterName, value);
+                }
+            }
+        }
+
+        public virtual TDbContext GetOrCreateDbContext<TDbContext>(MultiTenancySides? multiTenancySide = null)
             where TDbContext : DbContext
         {
+            var connectionStringResolveArgs = new ConnectionStringResolveArgs(multiTenancySide);
+            connectionStringResolveArgs["DbContextType"] = typeof(TDbContext);
+            var connectionString = ResolveConnectionString(connectionStringResolveArgs);
+
+            var dbContextKey = typeof (TDbContext).FullName + "#" + connectionString;
+
             DbContext dbContext;
-            if (!_activeDbContexts.TryGetValue(typeof(TDbContext), out dbContext))
+            if (!ActiveDbContexts.TryGetValue(dbContextKey, out dbContext))
             {
-                _activeDbContexts[typeof(TDbContext)] = dbContext = _iocResolver.Resolve<TDbContext>();
+
+                dbContext = _dbContextResolver.Resolve<TDbContext>(connectionString);
+                ((IObjectContextAdapter)dbContext).ObjectContext.ObjectMaterialized += ObjectContext_ObjectMaterialized;
+
+                foreach (var filter in Filters)
+                {
+                    if (filter.IsEnabled)
+                    {
+                        dbContext.EnableFilter(filter.FilterName);
+                    }
+                    else
+                    {
+                        dbContext.DisableFilter(filter.FilterName);
+                    }
+
+                    foreach (var filterParameter in filter.FilterParameters)
+                    {
+                        if (TypeHelper.IsFunc<object>(filterParameter.Value))
+                        {
+                            dbContext.SetFilterScopedParameterValue(filter.FilterName, filterParameter.Key, (Func<object>)filterParameter.Value);
+                        }
+                        else
+                        {
+                            dbContext.SetFilterScopedParameterValue(filter.FilterName, filterParameter.Key, filterParameter.Value);
+                        }
+                    }
+                }
+
+                ActiveDbContexts[dbContextKey] = dbContext;
             }
 
             return (TDbContext)dbContext;
@@ -94,15 +178,13 @@ namespace Abp.EntityFramework.Uow
 
         protected override void DisposeUow()
         {
-            _activeDbContexts.Values.ForEach(dbContext =>
-            {
-                dbContext.Dispose();
-                _iocResolver.Release(dbContext);
-            });
+            ActiveDbContexts.Values.ForEach(Release);
+            ActiveDbContexts.Clear();
 
-            if (_transaction != null)
+            if (CurrentTransaction != null)
             {
-                _transaction.Dispose();
+                CurrentTransaction.Dispose();
+                CurrentTransaction = null;
             }
         }
 
@@ -114,6 +196,18 @@ namespace Abp.EntityFramework.Uow
         protected virtual async Task SaveChangesInDbContextAsync(DbContext dbContext)
         {
             await dbContext.SaveChangesAsync();
+        }
+        
+        protected virtual void Release(DbContext dbContext)
+        {
+            dbContext.Dispose();
+            IocResolver.Release(dbContext);
+        }
+
+        private static void ObjectContext_ObjectMaterialized(object sender, ObjectMaterializedEventArgs e)
+        {
+            var entityType = ObjectContext.GetObjectType(e.Entity.GetType());
+            DateTimePropertyInfoHelper.NormalizeDatePropertyKinds(e.Entity,entityType);
         }
     }
 }

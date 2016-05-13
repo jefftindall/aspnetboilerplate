@@ -22,7 +22,7 @@ namespace Abp.TestBase.Runtime.Session
             }
             set
             {
-                if (!_multiTenancy.IsEnabled && value != 1)
+                if (!_multiTenancy.IsEnabled && value != 1 && value != null)
                 {
                     throw new AbpException("Can not set TenantId since multi-tenancy is not enabled. Use IMultiTenancyConfig.IsEnabled to enable it.");
                 }
@@ -32,6 +32,10 @@ namespace Abp.TestBase.Runtime.Session
         }
 
         public MultiTenancySides MultiTenancySide { get { return GetCurrentMultiTenancySide(); } }
+        
+        public long? ImpersonatorUserId { get; set; }
+        
+        public int? ImpersonatorTenantId { get; set; }
 
         private readonly IMultiTenancyConfig _multiTenancy;
         private int? _tenantId;
@@ -39,7 +43,6 @@ namespace Abp.TestBase.Runtime.Session
         public TestAbpSession(IMultiTenancyConfig multiTenancy)
         {
             _multiTenancy = multiTenancy;
-
         }
 
         private MultiTenancySides GetCurrentMultiTenancySide()

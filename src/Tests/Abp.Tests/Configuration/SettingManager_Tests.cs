@@ -2,6 +2,9 @@
 using System.Linq;
 using System.Threading.Tasks;
 using Abp.Configuration;
+using Abp.Configuration.Startup;
+using Abp.Runtime.Caching.Configuration;
+using Abp.Runtime.Caching.Memory;
 using NSubstitute;
 using Shouldly;
 using Xunit;
@@ -12,11 +15,23 @@ namespace Abp.Tests.Configuration
     {
         private const string MyAppLevelSetting = "MyAppLevelSetting";
         private const string MyAllLevelsSetting = "MyAllLevelsSetting";
+        private const string MyNotInheritedSetting = "MyNotInheritedSetting";
+
+        private SettingManager CreateSettingManager()
+        {
+            return new SettingManager(
+                CreateMockSettingDefinitionManager(),
+                new AbpMemoryCacheManager(
+                    LocalIocManager,
+                    new CachingConfiguration(Substitute.For<IAbpStartupConfiguration>())
+                    )
+                );
+        }
 
         [Fact]
         public async Task Should_Get_Default_Values_With_No_Store_And_No_Session()
         {
-            var settingManager = new SettingManager(CreateMockSettingDefinitionManager());
+            var settingManager = CreateSettingManager();
 
             (await settingManager.GetSettingValueAsync<int>(MyAppLevelSetting)).ShouldBe(42);
             (await settingManager.GetSettingValueAsync(MyAllLevelsSetting)).ShouldBe("application level default value");
@@ -25,10 +40,8 @@ namespace Abp.Tests.Configuration
         [Fact]
         public async Task Should_Get_Stored_Application_Value_With_No_Session()
         {
-            var settingManager = new SettingManager(CreateMockSettingDefinitionManager())
-            {
-                SettingStore = new MemorySettingStore()
-            };
+            var settingManager = CreateSettingManager();
+            settingManager.SettingStore = new MemorySettingStore();
 
             (await settingManager.GetSettingValueAsync<int>(MyAppLevelSetting)).ShouldBe(48);
             (await settingManager.GetSettingValueAsync(MyAllLevelsSetting)).ShouldBe("application level stored value");
@@ -39,11 +52,13 @@ namespace Abp.Tests.Configuration
         {
             var session = new MyChangableSession();
 
-            var settingManager = new SettingManager(CreateMockSettingDefinitionManager());
+            var settingManager = CreateSettingManager();
             settingManager.SettingStore = new MemorySettingStore();
-            settingManager.Session = session;
+            settingManager.AbpSession = session;
 
             session.TenantId = 1;
+
+            //Inherited setting
 
             session.UserId = 1;
             (await settingManager.GetSettingValueAsync(MyAllLevelsSetting)).ShouldBe("user 1 stored value");
@@ -57,27 +72,34 @@ namespace Abp.Tests.Configuration
             session.TenantId = 3;
             session.UserId = 3;
             (await settingManager.GetSettingValueAsync(MyAllLevelsSetting)).ShouldBe("application level stored value"); //Because no user and tenant value in the store
+
+            //Not inherited setting
+
+            session.TenantId = 1;
+            session.UserId = 1;
+
+            (await settingManager.GetSettingValueForApplicationAsync(MyNotInheritedSetting)).ShouldBe("application value");
+            (await settingManager.GetSettingValueForTenantAsync(MyNotInheritedSetting, session.TenantId.Value)).ShouldBe("default-value");
+            (await settingManager.GetSettingValueAsync(MyNotInheritedSetting)).ShouldBe("default-value");
         }
 
         [Fact]
         public async Task Should_Get_All_Values()
         {
-            var settingManager = new SettingManager(CreateMockSettingDefinitionManager())
-            {
-                SettingStore = new MemorySettingStore()
-            };
+            var settingManager = CreateSettingManager();
+            settingManager.SettingStore = new MemorySettingStore();
 
-            (await settingManager.GetAllSettingValuesAsync()).Count.ShouldBe(2);
+            (await settingManager.GetAllSettingValuesAsync()).Count.ShouldBe(3);
 
-            (await settingManager.GetAllSettingValuesForApplicationAsync()).Count.ShouldBe(2);
+            (await settingManager.GetAllSettingValuesForApplicationAsync()).Count.ShouldBe(3);
 
             (await settingManager.GetAllSettingValuesForTenantAsync(1)).Count.ShouldBe(1);
             (await settingManager.GetAllSettingValuesForTenantAsync(2)).Count.ShouldBe(0);
             (await settingManager.GetAllSettingValuesForTenantAsync(3)).Count.ShouldBe(0);
 
-            (await settingManager.GetAllSettingValuesForUserAsync(1)).Count.ShouldBe(1);
-            (await settingManager.GetAllSettingValuesForUserAsync(2)).Count.ShouldBe(1);
-            (await settingManager.GetAllSettingValuesForUserAsync(3)).Count.ShouldBe(0);
+            (await settingManager.GetAllSettingValuesForUserAsync(new UserIdentifier(1,1))).Count.ShouldBe(1);
+            (await settingManager.GetAllSettingValuesForUserAsync(new UserIdentifier(1, 2))).Count.ShouldBe(1);
+            (await settingManager.GetAllSettingValuesForUserAsync(new UserIdentifier(1, 3))).Count.ShouldBe(0);
         }
 
         [Fact]
@@ -85,11 +107,9 @@ namespace Abp.Tests.Configuration
         {
             var session = new MyChangableSession();
 
-            var settingManager = new SettingManager(CreateMockSettingDefinitionManager())
-            {
-                SettingStore = new MemorySettingStore(),
-                Session = session
-            };
+            var settingManager = CreateSettingManager();
+            settingManager.SettingStore = new MemorySettingStore();
+            settingManager.AbpSession = session;
 
             //Application level changes
 
@@ -121,22 +141,20 @@ namespace Abp.Tests.Configuration
             var session = new MyChangableSession();
             var store = new MemorySettingStore();
 
-            var settingManager = new SettingManager(CreateMockSettingDefinitionManager())
-            {
-                SettingStore = store,
-                Session = session
-            };
+            var settingManager = CreateSettingManager();
+            settingManager.SettingStore = store;
+            settingManager.AbpSession = session;
 
             session.TenantId = 1;
             session.UserId = 1;
 
             //We can get user's personal stored value
-            (await store.GetSettingOrNullAsync(null, 1, MyAllLevelsSetting)).ShouldNotBe(null);
+            (await store.GetSettingOrNullAsync(1, 1, MyAllLevelsSetting)).ShouldNotBe(null);
             (await settingManager.GetSettingValueAsync(MyAllLevelsSetting)).ShouldBe("user 1 stored value");
 
             //This will delete setting for the user since it's same as tenant's setting value
             await settingManager.ChangeSettingForUserAsync(1, MyAllLevelsSetting, "tenant 1 stored value");
-            (await store.GetSettingOrNullAsync(null, 1, MyAllLevelsSetting)).ShouldBe(null);
+            (await store.GetSettingOrNullAsync(1, 1, MyAllLevelsSetting)).ShouldBe(null);
 
             //We can get tenant's setting value
             (await store.GetSettingOrNullAsync(1, null, MyAllLevelsSetting)).ShouldNotBe(null);
@@ -144,7 +162,7 @@ namespace Abp.Tests.Configuration
 
             //This will delete setting for tenant since it's same as application's setting value
             await settingManager.ChangeSettingForTenantAsync(1, MyAllLevelsSetting, "application level stored value");
-            (await store.GetSettingOrNullAsync(null, 1, MyAllLevelsSetting)).ShouldBe(null);
+            (await store.GetSettingOrNullAsync(1, 1, MyAllLevelsSetting)).ShouldBe(null);
 
             //We can get application's value
             (await store.GetSettingOrNullAsync(null, null, MyAllLevelsSetting)).ShouldNotBe(null);
@@ -164,6 +182,7 @@ namespace Abp.Tests.Configuration
             {
                 {MyAppLevelSetting, new SettingDefinition(MyAppLevelSetting, "42")},
                 {MyAllLevelsSetting, new SettingDefinition(MyAllLevelsSetting, "application level default value", scopes: SettingScopes.Application | SettingScopes.Tenant | SettingScopes.User)},
+                {MyNotInheritedSetting, new SettingDefinition(MyNotInheritedSetting, "default-value", scopes: SettingScopes.Application | SettingScopes.Tenant, isInherited: false)},
             };
 
             var definitionManager = Substitute.For<ISettingDefinitionManager>();
@@ -186,8 +205,9 @@ namespace Abp.Tests.Configuration
                     new SettingInfo(null, null, MyAppLevelSetting, "48"),
                     new SettingInfo(null, null, MyAllLevelsSetting, "application level stored value"),
                     new SettingInfo(1, null, MyAllLevelsSetting, "tenant 1 stored value"),
-                    new SettingInfo(null, 1, MyAllLevelsSetting, "user 1 stored value"),
-                    new SettingInfo(null, 2, MyAllLevelsSetting, "user 2 stored value")
+                    new SettingInfo(1, 1, MyAllLevelsSetting, "user 1 stored value"),
+                    new SettingInfo(1, 2, MyAllLevelsSetting, "user 2 stored value"),
+                    new SettingInfo(null, null, MyNotInheritedSetting, "application value"),
                 };
             }
 

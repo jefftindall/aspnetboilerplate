@@ -1,6 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
 using System.Threading.Tasks;
 using Abp.Extensions;
+using Abp.MultiTenancy;
+using Abp.Runtime.Session;
 
 namespace Abp.Domain.Uow
 {
@@ -9,6 +14,10 @@ namespace Abp.Domain.Uow
     /// </summary>
     public abstract class UnitOfWorkBase : IUnitOfWork
     {
+        public string Id { get; private set; }
+
+        public IUnitOfWork Outer { get; set; }
+
         /// <inheritdoc/>
         public event EventHandler Completed;
 
@@ -21,10 +30,32 @@ namespace Abp.Domain.Uow
         /// <inheritdoc/>
         public UnitOfWorkOptions Options { get; private set; }
 
+        /// <inheritdoc/>
+        public IReadOnlyList<DataFilterConfiguration> Filters
+        {
+            get { return _filters.ToImmutableList(); }
+        }
+        private readonly List<DataFilterConfiguration> _filters;
+
+        /// <summary>
+        /// Gets default UOW options.
+        /// </summary>
+        protected IUnitOfWorkDefaultOptions DefaultOptions { get; private set; }
+
+        /// <summary>
+        /// Gets the connection string resolver.
+        /// </summary>
+        protected IConnectionStringResolver ConnectionStringResolver { get; private set; }
+
         /// <summary>
         /// Gets a value indicates that this unit of work is disposed or not.
         /// </summary>
         public bool IsDisposed { get; private set; }
+
+        /// <summary>
+        /// Reference to current ABP session.
+        /// </summary>
+        public IAbpSession AbpSession { private get; set; }
 
         /// <summary>
         /// Is <see cref="Begin"/> method called before?
@@ -46,6 +77,21 @@ namespace Abp.Domain.Uow
         /// </summary>
         private Exception _exception;
 
+        private int? _tenantId;
+
+        /// <summary>
+        /// Constructor.
+        /// </summary>
+        protected UnitOfWorkBase(IConnectionStringResolver connectionStringResolver, IUnitOfWorkDefaultOptions defaultOptions)
+        {
+            DefaultOptions = defaultOptions;
+            ConnectionStringResolver = connectionStringResolver;
+
+            Id = Guid.NewGuid().ToString("N");
+            _filters = defaultOptions.Filters.ToList();
+            AbpSession = NullAbpSession.Instance;
+        }
+
         /// <inheritdoc/>
         public void Begin(UnitOfWorkOptions options)
         {
@@ -55,7 +101,12 @@ namespace Abp.Domain.Uow
             }
 
             PreventMultipleBegin();
-            Options = options;
+            Options = options; //TODO: Do not set options like that, instead make a copy?
+
+            SetFilters(options.FilterOverrides);
+
+            SetTenantId(AbpSession.TenantId);
+
             BeginUow();
         }
 
@@ -64,6 +115,113 @@ namespace Abp.Domain.Uow
 
         /// <inheritdoc/>
         public abstract Task SaveChangesAsync();
+
+        /// <inheritdoc/>
+        public IDisposable DisableFilter(params string[] filterNames)
+        {
+            //TODO: Check if filters exists?
+
+            var disabledFilters = new List<string>();
+
+            foreach (var filterName in filterNames)
+            {
+                var filterIndex = GetFilterIndex(filterName);
+                if (_filters[filterIndex].IsEnabled)
+                {
+                    disabledFilters.Add(filterName);
+                    _filters[filterIndex] = new DataFilterConfiguration(filterName, false);
+                }
+            }
+
+            disabledFilters.ForEach(ApplyDisableFilter);
+
+            return new DisposeAction(() => EnableFilter(disabledFilters.ToArray()));
+        }
+
+        /// <inheritdoc/>
+        public IDisposable EnableFilter(params string[] filterNames)
+        {
+            //TODO: Check if filters exists?
+
+            var enabledFilters = new List<string>();
+
+            foreach (var filterName in filterNames)
+            {
+                var filterIndex = GetFilterIndex(filterName);
+                if (!_filters[filterIndex].IsEnabled)
+                {
+                    enabledFilters.Add(filterName);
+                    _filters[filterIndex] = new DataFilterConfiguration(filterName, true);
+                }
+            }
+
+            enabledFilters.ForEach(ApplyEnableFilter);
+
+            return new DisposeAction(() => DisableFilter(enabledFilters.ToArray()));
+        }
+
+        /// <inheritdoc/>
+        public bool IsFilterEnabled(string filterName)
+        {
+            return GetFilter(filterName).IsEnabled;
+        }
+
+        /// <inheritdoc/>
+        public IDisposable SetFilterParameter(string filterName, string parameterName, object value)
+        {
+            var filterIndex = GetFilterIndex(filterName);
+
+            var newfilter = new DataFilterConfiguration(_filters[filterIndex]);
+
+            //Store old value
+            object oldValue = null;
+            var hasOldValue = newfilter.FilterParameters.ContainsKey(parameterName);
+            if (hasOldValue)
+            {
+                oldValue = newfilter.FilterParameters[parameterName];
+            }
+
+            newfilter.FilterParameters[parameterName] = value;
+
+            _filters[filterIndex] = newfilter;
+
+            ApplyFilterParameterValue(filterName, parameterName, value);
+
+            return new DisposeAction(() =>
+            {
+                //Restore old value
+                if (hasOldValue)
+                {
+                    SetFilterParameter(filterName, parameterName, oldValue);
+                }
+            });
+        }
+
+        public IDisposable SetTenantId(int? tenantId)
+        {
+            var oldTenantId = _tenantId;
+            _tenantId = tenantId;
+
+            var mayHaveTenantChange = SetFilterParameter(AbpDataFilters.MayHaveTenant, AbpDataFilters.Parameters.TenantId, tenantId);
+            var mustHaveTenantChange = SetFilterParameter(AbpDataFilters.MustHaveTenant, AbpDataFilters.Parameters.TenantId, tenantId ?? 0);
+
+            var mustHaveTenantEnableChange = tenantId == null
+                ? DisableFilter(AbpDataFilters.MustHaveTenant)
+                : EnableFilter(AbpDataFilters.MustHaveTenant);
+            
+            return new DisposeAction(() =>
+            {
+                mayHaveTenantChange.Dispose();
+                mustHaveTenantEnableChange.Dispose();
+                mustHaveTenantChange.Dispose();
+                _tenantId = oldTenantId;
+            });
+        }
+
+        public int? GetTenantId()
+        {
+            return _tenantId;
+        }
 
         /// <inheritdoc/>
         public void Complete()
@@ -139,6 +297,43 @@ namespace Abp.Domain.Uow
         protected abstract void DisposeUow();
 
         /// <summary>
+        /// Concrete Unit of work classes should implement this
+        /// method in order to disable a filter.
+        /// Should not call base method since it throws <see cref="NotImplementedException"/>.
+        /// </summary>
+        /// <param name="filterName">Filter name</param>
+        protected virtual void ApplyDisableFilter(string filterName)
+        {
+            //throw new NotImplementedException("DisableFilter is not implemented for " + GetType().FullName);
+        }
+
+        /// <summary>
+        /// Concrete Unit of work classes should implement this
+        /// method in order to enable a filter.
+        /// Should not call base method since it throws <see cref="NotImplementedException"/>.
+        /// </summary>
+        /// <param name="filterName">Filter name</param>
+        protected virtual void ApplyEnableFilter(string filterName)
+        {
+            //throw new NotImplementedException("EnableFilter is not implemented for " + GetType().FullName);
+        }
+        
+        /// <summary>
+        /// Concrete Unit of work classes should implement this
+        /// method in order to set a parameter's value.
+        /// Should not call base method since it throws <see cref="NotImplementedException"/>.
+        /// </summary>
+        protected virtual void ApplyFilterParameterValue(string filterName, string parameterName, object value)
+        {
+            //throw new NotImplementedException("SetFilterParameterValue is not implemented for " + GetType().FullName);
+        }
+
+        protected virtual string ResolveConnectionString(ConnectionStringResolveArgs args)
+        {
+            return ConnectionStringResolver.GetNameOrConnectionString(args);
+        }
+
+        /// <summary>
         /// Called to trigger <see cref="Completed"/> event.
         /// </summary>
         protected virtual void OnCompleted()
@@ -181,6 +376,66 @@ namespace Abp.Domain.Uow
             }
 
             _isCompleteCalledBefore = true;
+        }
+
+        private void SetFilters(List<DataFilterConfiguration> filterOverrides)
+        {
+            for (var i = 0; i < _filters.Count; i++)
+            {
+                var filterOverride = filterOverrides.FirstOrDefault(f => f.FilterName == _filters[i].FilterName);
+                if (filterOverride != null)
+                {
+                    _filters[i] = filterOverride;
+                }
+            }
+
+            if (AbpSession.TenantId == null)
+            {
+                ChangeFilterIsEnabledIfNotOverrided(filterOverrides, AbpDataFilters.MustHaveTenant, false);
+            }
+        }
+
+        private void ChangeFilterIsEnabledIfNotOverrided(List<DataFilterConfiguration> filterOverrides, string filterName, bool isEnabled)
+        {
+            if (filterOverrides.Any(f => f.FilterName == filterName))
+            {
+                return;
+            }
+
+            var index = _filters.FindIndex(f => f.FilterName == filterName);
+            if (index < 0)
+            {
+                return;
+            }
+
+            if (_filters[index].IsEnabled == isEnabled)
+            {
+                return;
+            }
+
+            _filters[index] = new DataFilterConfiguration(filterName, isEnabled);
+        }
+
+        private DataFilterConfiguration GetFilter(string filterName)
+        {
+            var filter = _filters.FirstOrDefault(f => f.FilterName == filterName);
+            if (filter == null)
+            {
+                throw new AbpException("Unknown filter name: " + filterName + ". Be sure this filter is registered before.");
+            }
+
+            return filter;
+        }
+
+        private int GetFilterIndex(string filterName)
+        {
+            var filterIndex = _filters.FindIndex(f => f.FilterName == filterName);
+            if (filterIndex < 0)
+            {
+                throw new AbpException("Unknown filter name: " + filterName + ". Be sure this filter is registered before.");
+            }
+
+            return filterIndex;
         }
     }
 }

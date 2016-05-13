@@ -1,9 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
+using Abp.Application.Features;
 using Abp.Collections.Extensions;
 using Abp.Configuration.Startup;
 using Abp.Dependency;
+using Abp.MultiTenancy;
+using Abp.Runtime.Session;
 
 namespace Abp.Authorization
 {
@@ -12,23 +15,33 @@ namespace Abp.Authorization
     /// </summary>
     internal class PermissionManager : PermissionDefinitionContextBase, IPermissionManager, ISingletonDependency
     {
+        public IAbpSession AbpSession { get; set; }
+
         private readonly IIocManager _iocManager;
         private readonly IAuthorizationConfiguration _authorizationConfiguration;
 
         /// <summary>
         /// Constructor.
         /// </summary>
-        public PermissionManager(IIocManager iocManager, IAuthorizationConfiguration authorizationConfiguration)
+        public PermissionManager(
+            IIocManager iocManager,
+            IAuthorizationConfiguration authorizationConfiguration)
         {
             _iocManager = iocManager;
             _authorizationConfiguration = authorizationConfiguration;
+
+            AbpSession = NullAbpSession.Instance;
         }
 
         public void Initialize()
         {
             foreach (var providerType in _authorizationConfiguration.Providers)
             {
-                CreateAuthorizationProvider(providerType).SetPermissions(this);
+                _iocManager.RegisterIfNot(providerType, DependencyLifeStyle.Transient);
+                using (var provider = _iocManager.ResolveAsDisposable<AuthorizationProvider>(providerType))
+                {
+                    provider.Object.SetPermissions(this);
+                }
             }
 
             Permissions.AddAllPermissions();
@@ -45,19 +58,36 @@ namespace Abp.Authorization
             return permission;
         }
 
-        public IReadOnlyList<Permission> GetAllPermissions()
+        public IReadOnlyList<Permission> GetAllPermissions(bool tenancyFilter = true)
         {
-            return Permissions.Values.ToImmutableList();
+            using (var featureDependencyContext = _iocManager.ResolveAsDisposable<FeatureDependencyContext>())
+            {
+                var featureDependencyContextObject = featureDependencyContext.Object;
+                return Permissions.Values
+                    .WhereIf(tenancyFilter, p => p.MultiTenancySides.HasFlag(AbpSession.MultiTenancySide))
+                    .Where(p =>
+                        p.FeatureDependency == null ||
+                        AbpSession.MultiTenancySide == MultiTenancySides.Host ||
+                        p.FeatureDependency.IsSatisfied(featureDependencyContextObject)
+                    ).ToImmutableList();
+            }
         }
 
-        private AuthorizationProvider CreateAuthorizationProvider(Type providerType)
+        public IReadOnlyList<Permission> GetAllPermissions(MultiTenancySides multiTenancySides)
         {
-            if (!_iocManager.IsRegistered(providerType))
+            using (var featureDependencyContext = _iocManager.ResolveAsDisposable<FeatureDependencyContext>())
             {
-                _iocManager.Register(providerType);
+                var featureDependencyContextObject = featureDependencyContext.Object;
+                return Permissions.Values
+                    .Where(p => p.MultiTenancySides.HasFlag(multiTenancySides))
+                    .Where(p =>
+                        p.FeatureDependency == null ||
+                        AbpSession.MultiTenancySide == MultiTenancySides.Host ||
+                        (p.MultiTenancySides.HasFlag(MultiTenancySides.Host) &&
+                         multiTenancySides.HasFlag(MultiTenancySides.Host)) ||
+                        p.FeatureDependency.IsSatisfied(featureDependencyContextObject)
+                    ).ToImmutableList();
             }
-
-            return (AuthorizationProvider)_iocManager.Resolve(providerType);
         }
     }
 }

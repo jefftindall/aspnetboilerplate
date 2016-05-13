@@ -1,43 +1,26 @@
+
 ASP.NET Boilerplate
-===
+===================
 
-ASP.NET Boilerplate is a starting point for new modern ASP.NET MVC web applications with best practices and most popular tools!
+What is ABP?
+------------
 
-ASP.NET Boilerplate implements __NLayer architecture__ and __Domain Driven Design__ with these tools:
+ASP.NET Boilerplate is a starting point for new modern web applications using best practices and most popular tools. It's aimed to be a __SOLID__ model, a general-purpose __application framework__ and a project __template__.
 
-- Server side
-  - ASP.NET MVC and ASP.NET Web API (as web framework)
-  - Castle windsor (as Dependency Injection container)
-  - EntityFramework or NHibernate+FluentNHibernate+FluentMigrations (for ORM and DB migrations)
-  - Log4Net (for logging)
-  - AutoMapper (for DTO adapters and other mappings)
-- Client side
-  - Twitter bootstrap (as HTML & CSS framework)
-  - Less (as CSS pre-compiler)
-  - AngularJs or DurandalJs (as Single Page Application (SPA) framework)
-  - jQuery (as DOM & Ajax library)
-  - Modernizr (for feature detection)
-  - Other JS libraries: jQuery.validate, jQuery.form, jQuery.blockUI, json2
+### Framework
 
-It adds it's own techniques such as:
-- Modular architecture
-- Unit of work implementation
-- Event bus implementation for domain events
-- Easily working with embedded resources
-- Auto-creating Web API layer for Application Services
-- Auto-creating Javascript proxy layer to use Web API layer
-- Javascript helper methods for ajax, notifications, message boxes, making UI busy...
+ASP.NET Boilerplate is an application framework built on latest __ASP.NET MVC__ & __Web API__ technologies. It makes easy to use dependency injection, logging, validation, exception handling, localization and so on. It makes these not only itself but also using popular framework and libraries.
 
-Also adds standard stuff:
-- Localization
-- Exception handling
-- Validation
-- Logging
+### Architecture
 
-Beside the framework, the first module (https://github.com/aspnetboilerplate/module-zero) is being developed to implement:
-- Authentication & Authorization (Implementing ASP.NET Identity Framework)
-- User & Role management
-- Setting management
+ASP.NET Boilerplate implements __NLayer architecture__ (Domain, Application, Infrastructure and Presentation Layers) and __Domain Driven Design__ (Entities, Repositories, Domain/Application Services, DTO's...). Also implements and provides a good infrastructure to implement __best practices__ such as __Dependency Injection__.
 
-Official web site: http://www.aspnetboilerplate.com
-Forum: http://forum.aspnetboilerplate.com
+### Template
+
+ASP.NET Boilerplate easily creates startup template for your project. It includes most used framework and libraries by default. Also allows you to choice __Single-Page__ (Angularjs) or __Multi-Page__ (MVC) architecture, EntityFramework or NHibernate as ORM.
+
+Links
+-----
+
+* Web site: http://www.aspnetboilerplate.com
+* Official forum: http://forum.aspnetboilerplate.com

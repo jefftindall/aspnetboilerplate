@@ -2,6 +2,7 @@ using System.Data;
 using System.Threading.Tasks;
 using Abp.Dependency;
 using Abp.Domain.Uow;
+using Abp.Runtime.Session;
 using Abp.Transactions.Extensions;
 using NHibernate;
 
@@ -12,6 +13,10 @@ namespace Abp.NHibernate.Uow
     /// </summary>
     public class NhUnitOfWork : UnitOfWorkBase, ITransientDependency
     {
+        /// <summary>
+        /// Used to get current session values.
+        /// </summary>
+        public IAbpSession AbpSession { get; set; }
         /// <summary>
         /// Gets NHibernate session object to perform queries.
         /// </summary>
@@ -29,8 +34,10 @@ namespace Abp.NHibernate.Uow
         /// <summary>
         /// Creates a new instance of <see cref="NhUnitOfWork"/>.
         /// </summary>
-        public NhUnitOfWork(ISessionFactory sessionFactory)
+        public NhUnitOfWork(ISessionFactory sessionFactory, IConnectionStringResolver connectionStringResolver, IUnitOfWorkDefaultOptions defaultOptions)
+            : base(connectionStringResolver, defaultOptions)
         {
+            AbpSession = NullAbpSession.Instance;
             _sessionFactory = sessionFactory;
         }
 
@@ -40,12 +47,38 @@ namespace Abp.NHibernate.Uow
                 ? _sessionFactory.OpenSession(DbConnection)
                 : _sessionFactory.OpenSession();
 
+            
+
             if (Options.IsTransactional == true)
             {
                 _transaction = Options.IsolationLevel.HasValue
                     ? Session.BeginTransaction(Options.IsolationLevel.Value.ToSystemDataIsolationLevel())
                     : Session.BeginTransaction();
             }
+            
+            this.CheckAndSetMayHaveTenant();
+            this.CheckAndSetMustHaveTenant();
+
+        }
+
+        protected virtual void CheckAndSetMustHaveTenant()
+        {
+            if (this.IsFilterEnabled(AbpDataFilters.MustHaveTenant)) return;
+            if (AbpSession.TenantId == null) return;
+            ApplyEnableFilter(AbpDataFilters.MustHaveTenant); //Enable Filters
+            ApplyFilterParameterValue(AbpDataFilters.MustHaveTenant,
+                AbpDataFilters.Parameters.TenantId,
+                AbpSession.GetTenantId()); //ApplyFilter
+        }
+
+        protected virtual void CheckAndSetMayHaveTenant()
+        {
+            if (this.IsFilterEnabled(AbpDataFilters.MayHaveTenant)) return;
+            if (AbpSession.TenantId == null) return;
+            ApplyEnableFilter(AbpDataFilters.MayHaveTenant); //Enable Filters
+            ApplyFilterParameterValue(AbpDataFilters.MayHaveTenant,
+                AbpDataFilters.Parameters.TenantId,
+                AbpSession.TenantId); //ApplyFilter
         }
 
         public override void SaveChanges()
@@ -53,9 +86,10 @@ namespace Abp.NHibernate.Uow
             Session.Flush();
         }
 
-        public async override Task SaveChangesAsync()
+        public override Task SaveChangesAsync()
         {
             Session.Flush();
+            return Task.FromResult(0);
         }
 
         /// <summary>
@@ -70,9 +104,10 @@ namespace Abp.NHibernate.Uow
             }
         }
 
-        protected async override Task CompleteUowAsync()
+        protected override Task CompleteUowAsync()
         {
             CompleteUow();
+            return Task.FromResult(0);
         }
 
         /// <summary>
@@ -87,6 +122,31 @@ namespace Abp.NHibernate.Uow
             }
 
             Session.Dispose();
+        }
+
+        protected override void ApplyEnableFilter(string filterName)
+        {
+            if( Session.GetEnabledFilter(filterName) == null )
+                Session.EnableFilter(filterName);
+        }
+        protected override void ApplyDisableFilter(string filterName)
+        {
+            if ( Session.GetEnabledFilter(filterName) != null )
+                Session.DisableFilter(filterName);
+        }
+
+        protected override void ApplyFilterParameterValue(string filterName, string parameterName, object value)
+        {
+            if (Session == null)
+            {
+                return;
+            }
+
+            var filter = Session.GetEnabledFilter(filterName);
+            if (filter != null)
+            {
+                filter.SetParameter(parameterName, value);
+            }
         }
     }
 }

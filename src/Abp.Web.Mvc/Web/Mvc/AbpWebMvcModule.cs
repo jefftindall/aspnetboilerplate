@@ -1,7 +1,9 @@
-﻿using System.Reflection;
+﻿using System;
+using System.Reflection;
 using System.Web.Mvc;
 using Abp.Modules;
 using Abp.Web.Mvc.Controllers;
+using Abp.Web.Mvc.ModelBinding.Binders;
 
 namespace Abp.Web.Mvc
 {
@@ -22,8 +24,15 @@ namespace Abp.Web.Mvc
         {
             IocManager.RegisterAssemblyByConvention(Assembly.GetExecutingAssembly());
 
-            ControllerBuilder.Current.SetControllerFactory(new WindsorControllerFactory(IocManager.IocContainer.Kernel));
-            GlobalFilters.Filters.Add(new AbpHandleErrorAttribute());
+            ControllerBuilder.Current.SetControllerFactory(new WindsorControllerFactory(IocManager));
+        }
+
+        /// <inheritdoc/>
+        public override void PostInitialize()
+        {
+            var abpMvcDateTimeBinder = new AbpMvcDateTimeBinder();
+            ModelBinders.Binders.Add(typeof(DateTime), abpMvcDateTimeBinder);
+            ModelBinders.Binders.Add(typeof(DateTime?), abpMvcDateTimeBinder);
         }
     }
 }

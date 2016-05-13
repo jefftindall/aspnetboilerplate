@@ -6,18 +6,8 @@ namespace Abp.Application.Services.Dto
     /// Can be used to send/receive Name/Value (or Key/Value) pairs.
     /// </summary>
     [Serializable]
-    public class NameValueDto : IDto
+    public class NameValueDto : NameValueDto<string>
     {
-        /// <summary>
-        /// Name.
-        /// </summary>
-        public string Name { get; set; }
-
-        /// <summary>
-        /// Value.
-        /// </summary>
-        public string Value { get; set; }
-
         /// <summary>
         /// Creates a new <see cref="NameValueDto"/>.
         /// </summary>
@@ -30,9 +20,53 @@ namespace Abp.Application.Services.Dto
         /// Creates a new <see cref="NameValueDto"/>.
         /// </summary>
         public NameValueDto(string name, string value)
+            : base(name, value)
         {
-            Name = name;
-            Value = value;
+
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="NameValueDto"/>.
+        /// </summary>
+        /// <param name="nameValue">A <see cref="NameValue"/> object to get it's name and value</param>
+        public NameValueDto(NameValue nameValue)
+            : this(nameValue.Name, nameValue.Value)
+        {
+
+        }
+    }
+
+    /// <summary>
+    /// Can be used to send/receive Name/Value (or Key/Value) pairs.
+    /// </summary>
+    [Serializable]
+    public class NameValueDto<T> : NameValue<T>, IDto
+    {
+        /// <summary>
+        /// Creates a new <see cref="NameValueDto"/>.
+        /// </summary>
+        public NameValueDto()
+        {
+
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="NameValueDto"/>.
+        /// </summary>
+        public NameValueDto(string name, T value)
+            : base(name, value)
+        {
+
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="NameValueDto"/>.
+        /// </summary>
+        /// <param name="nameValue">A <see cref="NameValue"/> object to get it's name and value</param>
+        public NameValueDto(NameValue<T> nameValue)
+            : this(nameValue.Name, nameValue.Value)
+        {
+
         }
     }
 }

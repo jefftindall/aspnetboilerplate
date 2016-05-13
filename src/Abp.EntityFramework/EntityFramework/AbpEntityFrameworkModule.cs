@@ -1,9 +1,10 @@
-﻿using System.Data.Entity.Infrastructure.Interception;
+﻿using System;
+using System.Collections.Generic;
+using System.Data.Entity;
 using System.Reflection;
 using Abp.Collections.Extensions;
-using Abp.EntityFramework.Dependency;
+using Abp.Dependency;
 using Abp.EntityFramework.Repositories;
-using Abp.EntityFramework.SoftDeleting;
 using Abp.EntityFramework.Uow;
 using Abp.Modules;
 using Abp.Reflection;
@@ -15,6 +16,7 @@ namespace Abp.EntityFramework
     /// <summary>
     /// This module is used to implement "Data Access Layer" in EntityFramework.
     /// </summary>
+    [DependsOn(typeof(AbpKernelModule))]
     public class AbpEntityFrameworkModule : AbpModule
     {
         public ILogger Logger { get; set; }
@@ -27,27 +29,20 @@ namespace Abp.EntityFramework
             Logger = NullLogger.Instance;
         }
 
-        public override void PreInitialize()
-        {
-            IocManager.AddConventionalRegistrar(new EntityFrameworkConventionalRegisterer());
-        }
-
         public override void Initialize()
         {
             IocManager.RegisterAssemblyByConvention(Assembly.GetExecutingAssembly());
 
             IocManager.IocContainer.Register(
-                Component.For(typeof (IDbContextProvider<>))
-                    .ImplementedBy(typeof (UnitOfWorkDbContextProvider<>))
+                Component.For(typeof(IDbContextProvider<>))
+                    .ImplementedBy(typeof(UnitOfWorkDbContextProvider<>))
                     .LifestyleTransient()
                 );
-            
-            RegisterGenericRepositories();
 
-            DbInterception.Add(new SoftDeleteInterceptor());
+            RegisterGenericRepositoriesAndMatchDbContexes();
         }
 
-        private void RegisterGenericRepositories()
+        private void RegisterGenericRepositoriesAndMatchDbContexes()
         {
             var dbContextTypes =
                 _typeFinder.Find(type =>
@@ -63,9 +58,34 @@ namespace Abp.EntityFramework
                 return;
             }
 
-            foreach (var dbContextType in dbContextTypes)
+            using (var repositoryRegistrar = IocManager.ResolveAsDisposable<EntityFrameworkGenericRepositoryRegistrar>())
             {
-                EntityFrameworkGenericRepositoryRegistrar.RegisterForDbContext(dbContextType, IocManager);
+                foreach (var dbContextType in dbContextTypes)
+                {
+                    repositoryRegistrar.Object.RegisterForDbContext(dbContextType, IocManager);
+                }
+            }
+
+            using (var dbContextMatcher = IocManager.ResolveAsDisposable<IDbContextTypeMatcher>())
+            {
+                foreach (var dbContextType in dbContextTypes)
+                {
+                    var types = new List<Type>();
+                    AddWithBaseTypes(dbContextType, types);
+                    foreach (var type in types)
+                    {
+                        dbContextMatcher.Object.Add(type, dbContextType);
+                    }
+                }
+            }
+        }
+
+        private static void AddWithBaseTypes(Type dbContextType, List<Type> types)
+        {
+            types.Add(dbContextType);
+            if (dbContextType != typeof(DbContext))
+            {
+                AddWithBaseTypes(dbContextType.BaseType, types);
             }
         }
     }

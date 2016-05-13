@@ -1,11 +1,14 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Abp.Domain.Entities;
+using Abp.Domain.Entities.Auditing;
+using Abp.TestBase.SampleApplication.ContacLists;
 
 namespace Abp.TestBase.SampleApplication.People
 {
     [Table("People")]
-    public class Person : Entity, ISoftDelete
+    public class Person : Entity, IDeletionAudited
     {
         public const int MaxNameLength = 64;
 
@@ -13,6 +16,15 @@ namespace Abp.TestBase.SampleApplication.People
         [MaxLength(MaxNameLength)]
         public virtual string Name { get; set; }
 
-        public bool IsDeleted { get; set; }
+        [ForeignKey("ContactListId")]
+        public virtual ContactList ContactList { get; set; }
+
+        public virtual int ContactListId { get; set; }
+
+        public virtual bool IsDeleted { get; set; }
+
+        public virtual long? DeleterUserId { get; set; }
+
+        public virtual DateTime? DeletionTime { get; set; }
     }
 }

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Abp.Collections.Extensions;
 
 namespace Abp
@@ -9,7 +11,7 @@ namespace Abp
     /// </summary>
     public static class RandomHelper
     {
-        private static readonly Random _rnd = new Random();
+        private static readonly Random Rnd = new Random();
 
         /// <summary>
         /// Returns a random number within a specified range.
@@ -23,9 +25,9 @@ namespace Abp
         /// </returns>
         public static int GetRandom(int minValue, int maxValue)
         {
-            lock (_rnd)
+            lock (Rnd)
             {
-                return _rnd.Next(minValue, maxValue);
+                return Rnd.Next(minValue, maxValue);
             }
         }
 
@@ -40,9 +42,9 @@ namespace Abp
         /// </returns>
         public static int GetRandom(int maxValue)
         {
-            lock (_rnd)
+            lock (Rnd)
             {
-                return _rnd.Next(maxValue);
+                return Rnd.Next(maxValue);
             }
         }
 
@@ -52,9 +54,9 @@ namespace Abp
         /// <returns>A 32-bit signed integer greater than or equal to zero and less than <see cref="int.MaxValue"/>.</returns>
         public static int GetRandom()
         {
-            lock (_rnd)
+            lock (Rnd)
             {
-                return _rnd.Next();
+                return Rnd.Next();
             }
         }
 
@@ -63,7 +65,6 @@ namespace Abp
         /// </summary>
         /// <typeparam name="T">Type of the objects</typeparam>
         /// <param name="objs">List of object to select a random one</param>
-        /// <returns></returns>
         public static T GetRandomOf<T>(params T[] objs)
         {
             if (objs.IsNullOrEmpty())
@@ -71,7 +72,27 @@ namespace Abp
                 throw new ArgumentException("objs can not be null or empty!", "objs");
             }
 
-            return objs[GetRandom(0, objs.Length - 1)];
+            return objs[GetRandom(0, objs.Length)];
+        }
+
+        /// <summary>
+        /// Generates a randomized list from given enumerable.
+        /// </summary>
+        /// <typeparam name="T">Type of items in the list</typeparam>
+        /// <param name="items">items</param>
+        public static List<T> GenerateRandomizedList<T>(IEnumerable<T> items)
+        {
+            var currentList = new List<T>(items);
+            var randomList = new List<T>();
+
+            while (currentList.Any())
+            {
+                var randomIndex = RandomHelper.GetRandom(0, currentList.Count);
+                randomList.Add(currentList[randomIndex]);
+                currentList.RemoveAt(randomIndex);
+            }
+
+            return randomList;
         }
     }
 }

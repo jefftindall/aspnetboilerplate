@@ -32,14 +32,14 @@ namespace Abp.Web.Authorization
         /// <inheritdoc/>
         public async Task<string> GetScriptAsync()
         {
-            var allPermissionNames = _permissionManager.GetAllPermissions().Select(p => p.Name).ToList();
+            var allPermissionNames = _permissionManager.GetAllPermissions(false).Select(p => p.Name).ToList();
             var grantedPermissionNames = new List<string>();
 
             if (AbpSession.UserId.HasValue)
             {
                 foreach (var permissionName in allPermissionNames)
                 {
-                    if (await PermissionChecker.IsGrantedAsync(AbpSession.UserId.Value, permissionName))
+                    if (await PermissionChecker.IsGrantedAsync(permissionName))
                     {
                         grantedPermissionNames.Add(permissionName);
                     }

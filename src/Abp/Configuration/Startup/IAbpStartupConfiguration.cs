@@ -1,6 +1,12 @@
-﻿using Abp.Dependency;
+﻿using System;
+using Abp.Application.Features;
+using Abp.Auditing;
+using Abp.BackgroundJobs;
+using Abp.Dependency;
 using Abp.Domain.Uow;
 using Abp.Events.Bus;
+using Abp.Notifications;
+using Abp.Runtime.Caching.Configuration;
 
 namespace Abp.Configuration.Startup
 {
@@ -28,6 +34,16 @@ namespace Abp.Configuration.Startup
         /// Used to configure <see cref="IEventBus"/>.
         /// </summary>
         IEventBusConfiguration EventBus { get; }
+
+        /// <summary>
+        /// Used to configure auditing.
+        /// </summary>
+        IAuditingConfiguration Auditing { get; }
+
+        /// <summary>
+        /// Used to configure caching.
+        /// </summary>
+        ICachingConfiguration Caching { get; }
 
         /// <summary>
         /// Used to configure multi-tenancy.
@@ -60,5 +76,28 @@ namespace Abp.Configuration.Startup
         /// Used to configure unit of work defaults.
         /// </summary>
         IUnitOfWorkDefaultOptions UnitOfWork { get; }
+
+        /// <summary>
+        /// Used to configure features.
+        /// </summary>
+        IFeatureConfiguration Features { get; }
+
+        /// <summary>
+        /// Used to configure background job system.
+        /// </summary>
+        IBackgroundJobConfiguration BackgroundJobs { get; }
+
+        /// <summary>
+        /// Used to configure notification system.
+        /// </summary>
+        INotificationConfiguration Notifications { get; }
+
+        /// <summary>
+        /// Used to replace a service type.
+        /// Given <see cref="replaceAction"/> should register an implementation for the <see cref="type"/>.
+        /// </summary>
+        /// <param name="type">The type to be replaced.</param>
+        /// <param name="replaceAction">Replace action.</param>
+        void ReplaceService(Type type, Action replaceAction);
     }
 }

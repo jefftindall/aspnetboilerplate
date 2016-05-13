@@ -19,6 +19,15 @@ namespace Abp.Dependency
         /// Gets an object from IOC container.
         /// Returning object must be Released (see <see cref="Release"/>) after usage.
         /// </summary> 
+        /// <typeparam name="T">Type of the object to cast</typeparam>
+        /// <param name="type">Type of the object to resolve</param>
+        /// <returns>The object instance</returns>
+        T Resolve<T>(Type type);
+
+        /// <summary>
+        /// Gets an object from IOC container.
+        /// Returning object must be Released (see <see cref="Release"/>) after usage.
+        /// </summary> 
         /// <typeparam name="T">Type of the object to get</typeparam>
         /// <param name="argumentsAsAnonymousType">Constructor arguments</param>
         /// <returns>The object instance</returns>
@@ -56,7 +65,7 @@ namespace Abp.Dependency
         /// <summary>
         /// Checks whether given type is registered before.
         /// </summary>
-        /// <typeparam name="TType">Type to check</typeparam>
-        bool IsRegistered<TType>();
+        /// <typeparam name="T">Type to check</typeparam>
+        bool IsRegistered<T>();
     }
 }

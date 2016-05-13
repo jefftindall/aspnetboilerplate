@@ -21,6 +21,11 @@ namespace Abp.Extensions
         /// </summary>
         public static string EnsureEndsWith(this string str, char c, StringComparison comparisonType)
         {
+            if (str == null)
+            {
+                throw new ArgumentNullException("str");
+            }
+
             if (str.EndsWith(c.ToString(CultureInfo.InvariantCulture), comparisonType))
             {
                 return str;
@@ -34,6 +39,11 @@ namespace Abp.Extensions
         /// </summary>
         public static string EnsureEndsWith(this string str, char c, bool ignoreCase, CultureInfo culture)
         {
+            if (str == null)
+            {
+                throw new ArgumentNullException("str");
+            }
+
             if (str.EndsWith(c.ToString(culture), ignoreCase, culture))
             {
                 return str;
@@ -55,6 +65,11 @@ namespace Abp.Extensions
         /// </summary>
         public static string EnsureStartsWith(this string str, char c, StringComparison comparisonType)
         {
+            if (str == null)
+            {
+                throw new ArgumentNullException("str");
+            }
+
             if (str.StartsWith(c.ToString(CultureInfo.InvariantCulture), comparisonType))
             {
                 return str;
@@ -68,6 +83,11 @@ namespace Abp.Extensions
         /// </summary>
         public static string EnsureStartsWith(this string str, char c, bool ignoreCase, CultureInfo culture)
         {
+            if (str == null)
+            {
+                throw new ArgumentNullException("str");
+            }
+
             if (str.StartsWith(c.ToString(culture), ignoreCase, culture))
             {
                 return str;
@@ -95,9 +115,6 @@ namespace Abp.Extensions
         /// <summary>
         /// Gets a substring of a string from beginning of the string.
         /// </summary>
-        /// <param name="str"></param>
-        /// <param name="len"></param>
-        /// <returns></returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="str"/> is null</exception>
         /// <exception cref="ArgumentException">Thrown if <paramref name="len"/> is bigger that string's length</exception>
         public static string Left(this string str, int len)
@@ -116,6 +133,14 @@ namespace Abp.Extensions
         }
 
         /// <summary>
+        /// Converts line endings in the string to <see cref="Environment.NewLine"/>.
+        /// </summary>
+        public static string NormalizeLineEndings(this string str)
+        {
+            return str.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", Environment.NewLine);
+        }
+
+        /// <summary>
         /// Gets index of nth occurence of a char in a string.
         /// </summary>
         /// <param name="str">source string to be searched</param>
@@ -123,6 +148,11 @@ namespace Abp.Extensions
         /// <param name="n">Count of the occurence</param>
         public static int NthIndexOf(this string str, char c, int n)
         {
+            if (str == null)
+            {
+                throw new ArgumentNullException("str");
+            }
+
             var count = 0;
             for (var i = 0; i < str.Length; i++)
             {
@@ -143,9 +173,6 @@ namespace Abp.Extensions
         /// <summary>
         /// Gets a substring of a string from end of the string.
         /// </summary>
-        /// <param name="str"></param>
-        /// <param name="len"></param>
-        /// <returns></returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="str"/> is null</exception>
         /// <exception cref="ArgumentException">Thrown if <paramref name="len"/> is bigger that string's length</exception>
         public static string Right(this string str, int len)
@@ -163,6 +190,37 @@ namespace Abp.Extensions
             return str.Substring(str.Length - len, len);
         }
 
+        /// <summary>
+        /// Uses string.Split method to split given string by given separator.
+        /// </summary>
+        public static string[] Split(this string str, string separator)
+        {
+            return str.Split(new[] { separator }, StringSplitOptions.None);
+        }
+
+        /// <summary>
+        /// Uses string.Split method to split given string by given separator.
+        /// </summary>
+        public static string[] Split(this string str, string separator, StringSplitOptions options)
+        {
+            return str.Split(new[] { separator }, options);
+        }
+
+        /// <summary>
+        /// Uses string.Split method to split given string by <see cref="Environment.NewLine"/>.
+        /// </summary>
+        public static string[] SplitToLines(this string str)
+        {
+            return str.Split(Environment.NewLine);
+        }
+
+        /// <summary>
+        /// Uses string.Split method to split given string by <see cref="Environment.NewLine"/>.
+        /// </summary>
+        public static string[] SplitToLines(this string str, StringSplitOptions options)
+        {
+            return str.Split(Environment.NewLine, options);
+        }
 
         /// <summary>
         /// Converts PascalCase string to camelCase string.
@@ -204,6 +262,11 @@ namespace Abp.Extensions
         public static T ToEnum<T>(this string value)
             where T : struct
         {
+            if (value == null)
+            {
+                throw new ArgumentNullException("value");
+            }
+
             return (T)Enum.Parse(typeof(T), value);
         }
 
@@ -217,6 +280,11 @@ namespace Abp.Extensions
         public static T ToEnum<T>(this string value, bool ignoreCase)
             where T : struct
         {
+            if (value == null)
+            {
+                throw new ArgumentNullException("value");
+            }
+
             return (T)Enum.Parse(typeof(T), value, ignoreCase);
         }
 
@@ -259,7 +327,7 @@ namespace Abp.Extensions
         {
             if (str == null)
             {
-                throw new ArgumentNullException("str");
+                return null;
             }
 
             if (str.Length <= maxLength)
@@ -273,6 +341,7 @@ namespace Abp.Extensions
         /// <summary>
         /// Gets a substring of a string from beginning of the string if it exceeds maximum length.
         /// It adds a "..." postfix to end of the string if it's truncated.
+        /// Returning string can not be longer than maxLength.
         /// </summary>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="str"/> is null</exception>
         public static string TruncateWithPostfix(this string str, int maxLength)
@@ -283,13 +352,19 @@ namespace Abp.Extensions
         /// <summary>
         /// Gets a substring of a string from beginning of the string if it exceeds maximum length.
         /// It adds given <paramref name="postfix"/> to end of the string if it's truncated.
+        /// Returning string can not be longer than maxLength.
         /// </summary>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="str"/> is null</exception>
         public static string TruncateWithPostfix(this string str, int maxLength, string postfix)
         {
             if (str == null)
             {
-                throw new ArgumentNullException("str");
+                return null;
+            }
+
+            if (str == string.Empty || maxLength == 0)
+            {
+                return string.Empty;
             }
 
             if (str.Length <= maxLength)
@@ -297,7 +372,12 @@ namespace Abp.Extensions
                 return str;
             }
 
-            return str.Left(maxLength) + postfix;
+            if (maxLength <= postfix.Length)
+            {
+                return postfix.Left(maxLength);
+            }
+
+            return str.Left(maxLength - postfix.Length) + postfix;
         }
     }
 }

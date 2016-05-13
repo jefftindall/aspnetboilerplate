@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Reflection;
 using System.Web.Http.Filters;
+using Abp.Application.Services;
 using Abp.Dependency;
 using Abp.Extensions;
 
@@ -18,6 +19,8 @@ namespace Abp.WebApi.Controllers.Dynamic.Builders
         private IFilter[] _filters;
         private Func<Type, string> _serviceNameSelector;
         private Func<Type, bool> _typePredicate;
+        private bool _conventionalVerbs;
+        private Action<IApiControllerActionBuilder<T>> _forMethodsAction;
 
         public BatchApiControllerBuilder(Assembly assembly, string servicePrefix)
         {
@@ -43,13 +46,29 @@ namespace Abp.WebApi.Controllers.Dynamic.Builders
             return this;
         }
 
+        public IBatchApiControllerBuilder<T> ForMethods(Action<IApiControllerActionBuilder> action)
+        {
+            _forMethodsAction = action;
+            return this;
+        }
+
+        public IBatchApiControllerBuilder<T> WithConventionalVerbs()
+        {
+            _conventionalVerbs = true;
+            return this;
+        }
+
         public void Build()
         {
             var types =
                 from
                     type in _assembly.GetTypes()
                 where
-                    type.IsPublic && type.IsInterface && typeof(T).IsAssignableFrom(type) && IocManager.Instance.IsRegistered(type)
+                    (type.IsPublic || type.IsNestedPublic) && 
+                    type.IsInterface && 
+                    typeof(T).IsAssignableFrom(type) && 
+                    IocManager.Instance.IsRegistered(type) &&
+                    !type.IsDefined(typeof(DisableDynamicWebApiAttribute), true)
                 select
                     type;
 
@@ -79,6 +98,20 @@ namespace Abp.WebApi.Controllers.Dynamic.Builders
                     builder.GetType()
                         .GetMethod("WithFilters", BindingFlags.Public | BindingFlags.Instance)
                         .Invoke(builder, new object[] { _filters });
+                }
+
+                if (_conventionalVerbs)
+                {
+                    builder.GetType()
+                       .GetMethod("WithConventionalVerbs", BindingFlags.Public | BindingFlags.Instance)
+                       .Invoke(builder, new object[0]);
+                }
+
+                if (_forMethodsAction != null)
+                {
+                    builder.GetType()
+                        .GetMethod("ForMethods", BindingFlags.Public | BindingFlags.Instance)
+                        .Invoke(builder, new object[] { _forMethodsAction });
                 }
 
                 builder.GetType()

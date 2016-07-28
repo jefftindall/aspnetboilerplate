@@ -4,7 +4,6 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Threading.Tasks;
 using Abp.Extensions;
-using Abp.MultiTenancy;
 using Abp.Runtime.Session;
 
 namespace Abp.Domain.Uow
@@ -129,7 +128,7 @@ namespace Abp.Domain.Uow
                 if (_filters[filterIndex].IsEnabled)
                 {
                     disabledFilters.Add(filterName);
-                    _filters[filterIndex] = new DataFilterConfiguration(filterName, false);
+                    _filters[filterIndex] = new DataFilterConfiguration(_filters[filterIndex], false);
                 }
             }
 
@@ -151,7 +150,7 @@ namespace Abp.Domain.Uow
                 if (!_filters[filterIndex].IsEnabled)
                 {
                     enabledFilters.Add(filterName);
-                    _filters[filterIndex] = new DataFilterConfiguration(filterName, true);
+                    _filters[filterIndex] = new DataFilterConfiguration(_filters[filterIndex], true);
                 }
             }
 
@@ -202,18 +201,18 @@ namespace Abp.Domain.Uow
             var oldTenantId = _tenantId;
             _tenantId = tenantId;
 
-            var mayHaveTenantChange = SetFilterParameter(AbpDataFilters.MayHaveTenant, AbpDataFilters.Parameters.TenantId, tenantId);
-            var mustHaveTenantChange = SetFilterParameter(AbpDataFilters.MustHaveTenant, AbpDataFilters.Parameters.TenantId, tenantId ?? 0);
-
             var mustHaveTenantEnableChange = tenantId == null
                 ? DisableFilter(AbpDataFilters.MustHaveTenant)
                 : EnableFilter(AbpDataFilters.MustHaveTenant);
-            
+
+            var mayHaveTenantChange = SetFilterParameter(AbpDataFilters.MayHaveTenant, AbpDataFilters.Parameters.TenantId, tenantId);
+            var mustHaveTenantChange = SetFilterParameter(AbpDataFilters.MustHaveTenant, AbpDataFilters.Parameters.TenantId, tenantId ?? 0);
+
             return new DisposeAction(() =>
             {
                 mayHaveTenantChange.Dispose();
-                mustHaveTenantEnableChange.Dispose();
                 mustHaveTenantChange.Dispose();
+                mustHaveTenantEnableChange.Dispose();
                 _tenantId = oldTenantId;
             });
         }
@@ -277,9 +276,12 @@ namespace Abp.Domain.Uow
         }
 
         /// <summary>
-        /// Should be implemented by derived classes to start UOW.
+        /// Can be implemented by derived classes to start UOW.
         /// </summary>
-        protected abstract void BeginUow();
+        protected virtual void BeginUow()
+        {
+            
+        }
 
         /// <summary>
         /// Should be implemented by derived classes to complete UOW.
